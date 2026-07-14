@@ -12,11 +12,14 @@ venv\Scripts\activate  # Windows
 
 pip install -r requirements.txt
 
+```
 
 ## Rodar
 
 ```bash
 uvicorn app.main:app --reload
+
+```
 
 ## Endpoints
 
