@@ -6,7 +6,7 @@ class WhatsAppService:
         self.instance_name = "GrupoOfertas"
         self.api_key = "SenhaDoGrupo999"
 
-        self.default_destination = "5548999999999"
+        self.default_destination = "NUMERO_WHATS_DESTINATARIO"
 
     async def send_message(self, message: str) -> bool:
         url = f"{self.api_url}/message/sendText/{self.instance_name}"
