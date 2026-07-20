@@ -1,14 +1,17 @@
 import httpx
+from app.config import settings
 
 class WhatsAppService:
     def __init__(self):
-        self.api_url = "http://localhost:8080"
-        self.instance_name = "GrupoOfertas"
-        self.api_key = "SenhaDoGrupo999"
+        self.api_url = settings.EVOLUTION_API_URL
+        self.instance_name = settings.EVOLUTION_INSTANCE_NAME
+        self.api_key = settings.EVOLUTION_API_KEY
+        self.default_destination = settings.DEFAULT_DESTINATION
 
-        self.default_destination = "5548999999999"
+    async def send_message(self, message: str, destination: Optional[str] = None) -> bool:
 
-    async def send_message(self, message: str) -> bool:
+        target = destination or self.default_destination
+
         url = f"{self.api_url}/message/sendText/{self.instance_name}"
 
         headers = {
@@ -17,7 +20,7 @@ class WhatsAppService:
         }
 
         payload = {
-            "number": self.default_destination,
+            "number": target,
             "options": {
                 "delay": 1200,
                 "presence": "composing"
@@ -32,10 +35,10 @@ class WhatsAppService:
                 response = await client.post(url, headers=headers, json=payload, timeout=10.0)
 
                 if response.status_code in [200, 201]:
-                    print("✅ Mensagem enviada via Evolution API com sucesso!")
+                    print(f"✅ Mensagem enviada com sucesso para {target}!")
                     return True
                 else:
-                    print(f"❌ Falha no envio. Status: {response.status_code}. Resposta: {response.text}")
+                    print(f"❌ Falha no envio para {target}. Status: {response.status_code}. Resposta: {response.text}")
                     return False
         except Exception as e:
             print(f"🚨 Erro de conexão com a Evolution API: {e}")
