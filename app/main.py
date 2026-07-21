@@ -1,10 +1,10 @@
+import re
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.schemas import PromotionRequest, PromotionResponse, WebHookData
 from app.services.shopee import ShopeeService
 from app.services.whatsapp import WhatsAppService
 from app.config import settings
-import re
 import redis.asyncio as redis
 
 app = FastAPI(title="ShopeeZap API - Python")
@@ -17,7 +17,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-redis_client = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
+redis_client = redis.Redis(
+    host = settings.REDIS_HOST,
+    port = settings.REDIS_PORT,
+    db = 0,
+    decode_responses= True
+)
 
 shopee_service = ShopeeService()
 whatsapp_service = WhatsAppService()
@@ -47,13 +52,6 @@ async def send_promotion(request: PromotionRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
     
-
-redis_client = redis.Redis(
-    host = settings.REDIS_HOST,
-    port = settings.REDIS_PORT,
-    db = 0,
-    decode_responses= True
-)
     
 @app.post("/webhook/whatsapp")
 async def receive_whatsapp_webhook(webhook: WebHookData):
@@ -92,13 +90,15 @@ async def receive_whatsapp_webhook(webhook: WebHookData):
     print(f"\n📥 [WEBHOOK] Nova oferta processada (ID: {message_id} de: {sender})")
 
     try:
-        converted_url = await shopee_service.convert_link(original_url)
+        shopee_info = await shopee_service.convert_link(original_url)
+        converted_url = shopee_info["converted_url"]
+        product_name = shopee_info["product_name"]
 
-        full_message = (
-            f"*ACHADINHO AUTOMÁTICO!* 🔥\n\n"
-            f"{message_text.replace(original_url, '').strip()}\n\n"
-            f"👉 Compre aqui: {converted_url}"
-        )
+        body_description = message_text.replace(original_url, "").strip()
+        full_message = f"🔥 *{product_name}*\n\n"
+        if body_description:
+            full_message += f"{body_description}\n\n"
+        full_message += f"👉 Compre aqui: {converted_url}"
         
         await whatsapp_service.send_message(full_message)
 

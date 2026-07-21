@@ -1,3 +1,5 @@
+from typing import Dict, Any
+from app.config import settings
 import time
 import hashlib
 import hmac
@@ -6,24 +8,26 @@ import httpx
 
 class ShopeeService:
     def __init__(self):
-        self.app_id = "APP_ID_AQUI"
-        self.secret = "SECRET_KEY_AQUI"
-        self.api_url = "https://open-api.affiliate.shopee.com.br/api/v1/graphql"
+        self.app_id = settings.SHOPEE_APP_ID
+        self.secret_key = settings.SHOPEE_SECRET_KEY
+        self.api_url = settings.SHOPEE_API_URL
 
     def _generate_signature(self, payload_str: str, timestamp: int) -> str:
         factor = f"{self.app_id}{timestamp}{payload_str}"
         signature = hmac.new(
-            self.secret.encode("utf-8"),
+            self.secret_key.encode("utf-8"),
             factor.encode("utf-8"),
             hashlib.sha256
         ).hexdigest()
         return signature
 
     async def convert_link(self, original_url: str) -> str:
-        if self.app_id == "APP_ID_AQUI" or self.secret == "SECRET_KEY_AQUI":
+        if not self.app_id or not self.secret_key:
             print("⚠️ Chaves da Shopee não configuradas. Retornando link simulado.")
-            return f"https://shope.ee/m/simulado_{int(time.time())}"
-        
+            return {
+                "converted_url": f"https://shope.ee/m/simulado_{int(time.time())}",
+                "product_name": "🔥 Produto da Shopee (Titulo Simulado)"
+            }
         timestamp = int(time.time())
 
         query = """
@@ -32,6 +36,7 @@ class ShopeeService:
                 originLink: "%s"
             ){
                 promotionLink
+                productName
             }
         }
         """ % original_url
@@ -55,14 +60,31 @@ class ShopeeService:
 
                     if "errors" in data:
                         print(f"❌ Erro da API Shopee: {data['errors']}")
-                        return original_url
+                        return {
+                            "converted_url": original_url,
+                            "product_name": "OFERTA IMPERDÍVEL!"
+                        }
                     
-                    link = data["data"]["generatePromotionLink"]["promotionLink"]
-                    return link
+                    result_data = data.get("data", {}).get("generatePromotionLink", {})
+                    link = result_data.get("promotionLink", original_url)
+                    product_name = result_data.get("productName", "OFERTA IMPERDÍVEL!")
+                    
+                    return {
+                        "converted_url": link,
+                        "product_name": product_name
+                    }
+                
                 else:
                     print(f"❌ Falha na API da Shopee. Status: {response.status_code}. Resposta: {response.text}")
-                    return original_url
+                    return {
+                        "converted_url": original_url,
+                        "product_name": "OFERTA IMPERDÍVEL!"
+                    }
         
         except Exception as e:
             print(f"🚨 Erro ao converter link na Shopee: {e}")
-            return original_url
+            return {
+                "converted_url": original_url,
+                "product_name": "OFERTA IMPERDÍVEL!"
+            }
+        
