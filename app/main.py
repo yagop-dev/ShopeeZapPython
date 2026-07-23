@@ -64,47 +64,58 @@ async def receive_whatsapp_webhook(webhook: WebHookData):
     if remote_jid != settings.ALLOWED_GROUP_JID:
         return {"status": "ignored", "reason": "Message from unauthorized chat/group"}
 
+    from_me = message_data.get("key", {}).get("fromMe", False)
+    if from_me:
+        return {"status": "ignored", "reason": "Message sent by bot itself"}
+
     message_id = message_data.get("key", {}).get("id")
     if not message_id:
         return {"status": "ignored", "reason": "No message ID found"}
-    
-    is_new_message = await redis_client.set(f"msg_id:{message_id}", "1", ex=86400, nx=True)  
-    if not is_new_message:
-        print(f"⚠️ [WEBHOOK] Mensagme duplicada ignorada pelo Redis (ID:{message_id})")
-        return {"status": "ignored", "reason": "Duplicate message"}
+
+    try:
+        is_new_message = await redis_client.set(f"msg_id:{message_id}", "1", ex = 86400, nx = True)
+        if not is_new_message:
+            print(f"⚠️ [WEBHOOK] Mensagem duplicada ignorada pelo Redis (ID: {message_id})")
+            return {"status": "ignored", "reason": "Duplicate message"}
+    except Exception as redis_err:
+        print(f"⚠️ [REDIS] Inacessível: {redis_err}. Prosseguindo sem validação de duplicidade")
 
     message_text = message_data.get("message", {}).get("conversation") or \
                    message_data.get("message", {}).get("extendedTextMessage", {}).get("text")          
     if not message_text:
         return {"status": "ignored", "reason": "No text content found"}    
 
-    shopee_url_pattern = r"https?://(?:www\.)?(?:shopee\.com\.br|shope\.ee)/[^\s]+"
-    match = re.search(shopee_url_pattern, message_text)
+    shopee_url_pattern = r"https?://(?:www\.)?(?:shopee\.com\.br|shope\.ee|br\.shp\.ee|s\.shopee\.com\.br)/[^\s]+"
 
-    if not match:
+    found_urls = re.findall(shopee_url_pattern, message_text)
+    if not found_urls:
         return {"status": "ignored", "reason": "No Shopee link found in text"}
 
-    original_url = match.group(0)
+    product_url = found_urls[0]
     sender = message_data.get("pushName", "Desconhecido")
 
     print(f"\n📥 [WEBHOOK] Nova oferta processada (ID: {message_id} de: {sender})")
 
     try:
-        shopee_info = await shopee_service.convert_link(original_url)
-        converted_url = shopee_info["converted_url"]
-        product_name = shopee_info["product_name"]
+        formatted_message = message_text
 
-        body_description = message_text.replace(original_url, "").strip()
-        full_message = f"🔥 *{product_name}*\n\n"
-        if body_description:
-            full_message += f"{body_description}\n\n"
-        full_message += f"👉 Compre aqui: {converted_url}"
+        for product_url in found_urls:
+            shopee_info = await shopee_service.convert_link(product_url)
+            converted_url = shopee_info["converted_url"]
+            
+            formatted_message = formatted_message.replace(product_url, converted_url)
+
+        await whatsapp_service.send_message(
+            message = formatted_message,
+            destination = settings.DEFAULT_DESTINATION
+        )
         
-        await whatsapp_service.send_message(full_message)
-
     except Exception as e:
-        await redis_client.delete(f"mesg_id:{message_id}")
+        try:
+            await redis_client.delete(f"msg_id:{message_id}")
+        except Exception:
+            pass
         print(f"🚨 [WEBHOOK] Erro ao processar automação do link: {e}")
         return {"status": "error", "message": str(e)}
 
-    return {"status": "success", "processed": True, "extracted_url": original_url}
+    return {"status": "success", "processed": True, "extracted_url": product_url}
